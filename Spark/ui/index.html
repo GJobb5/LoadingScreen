@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spark Global - Loading Screen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800;900&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Canvas สำหรับเอฟเฟกต์ Particle แสงนีออนพื้นหลัง -->
+  <canvas id="bgCanvas"></canvas>
+
+  <!-- Ambient Glow Blobs -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <!-- กรอบหลัก Loading Screen UI -->
+  <div class="loading-wrapper" id="loadingWrapper">
+    <!-- Top Header -->
+    <header class="ui-header">
+      <div class="brand-badge">
+        <span class="badge-dot"></span>
+        <span class="badge-text">SPARK GLOBAL NETWORK</span>
+      </div>
+      <div class="server-status">
+        <span class="ping-indicator"></span>
+        <span class="status-text">ONLINE • SA-MP 0.3.7</span>
+      </div>
+    </header>
+
+    <!-- Center Hero Section -->
+    <main class="hero-section">
+      <div class="logo-container">
+        <div class="logo-aura"></div>
+        <div class="logo-inner">
+          <div class="logo-icon">✦</div>
+          <h1 class="server-title">SPARK<span class="highlight">GLOBAL</span></h1>
+        </div>
+        <p class="server-subtitle">ROLEPLAY & TRAINING EXPERIENCE</p>
+      </div>
+
+      <!-- Quick Server Features Pills -->
+      <div class="feature-pills">
+        <div class="pill">
+          <span class="pill-icon">⚡</span>
+          <span>High FPS Sync</span>
+        </div>
+        <div class="pill">
+          <span class="pill-icon">🎙️</span>
+          <span>Voice 3D Spatial</span>
+        </div>
+        <div class="pill">
+          <span class="pill-icon">🛡️</span>
+          <span>Anti-Cheat Guard</span>
+        </div>
+        <div class="pill">
+          <span class="pill-icon">🌐</span>
+          <span>Spark Training 2.0</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Loading Controls -->
+    <footer class="ui-footer">
+      <!-- Tips Carousel -->
+      <div class="tips-container">
+        <div class="tip-label">TIP OF THE DAY</div>
+        <div class="tip-content" id="tipText">ยินดีต้อนรับสู่ Spark Global เตรียมพร้อมสำหรับความมันส์ระดับพรีเมียม!</div>
+      </div>
+
+      <!-- Progress Section -->
+      <div class="progress-container">
+        <div class="progress-header">
+          <div class="status-wrapper">
+            <div class="spinner"></div>
+            <span class="loading-status-text" id="statusMessage">กำลังเชื่อมต่อกับเซิร์ฟเวอร์...</span>
+          </div>
+          <div class="percentage-wrapper">
+            <span class="percentage-num" id="progressPercent">0</span><span class="percentage-unit">%</span>
+          </div>
+        </div>
+
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressBar" style="width: 0%;">
+            <div class="progress-glow-head"></div>
+            <div class="progress-shimmer"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-meta">
+        <span class="meta-left">Official Server • Powered by Spark Team</span>
+        <span class="meta-right">discord.gg/spark</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
