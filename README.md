@@ -8,7 +8,6 @@
 - **Server Lock (IP Whitelist)**: Built-in protection that activates the plugin only when connecting to authorized server IPs.
 - **DirectX 9 & ImGui Integration**: Efficient in-game rendering hook into SA-MP's rendering pipeline.
 - **Lightweight Asset Loading**: Uses `stb_image` for fast, lightweight texture loading without external DirectX SDK dependencies for images.
-- **Spark Web UI Templates**: Includes modern HTML/CSS/JS web assets for web-based loading UI preview or Ultralight integration.
 
 ## Requirements
 
