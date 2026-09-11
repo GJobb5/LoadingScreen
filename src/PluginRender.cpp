@@ -1,4 +1,5 @@
 #include "PluginRender.h"
+#include "Config.h"
 #include <imgui.h>
 #include <imgui_impl_dx9.h>
 #include <imgui_impl_win32.h>
@@ -11,6 +12,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+extern HMODULE g_hModule;
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 using InitGameInstance = HWND(__cdecl*)(HINSTANCE);
@@ -31,14 +33,12 @@ HWND gameHwnd = []() {
 // ============================================================
 //  ระบบ Lock IP (อนุญาตเฉพาะเซิร์ฟเวอร์ที่กำหนด)
 // ============================================================
-static constexpr const char* ALLOWED_SERVER_IPS[] = {
-    "154.215.14.148",
-    "127.0.0.1"
-};
-
 static bool CheckServerIP() {
+    if (!Config::ENABLE_IP_PROTECTION) {
+        return true;
+    }
     std::string cmdLine = GetCommandLineA();
-    for (const char* ip : ALLOWED_SERVER_IPS) {
+    for (const char* ip : Config::ALLOWED_SERVER_IPS) {
         std::string targetArg = "-h ";
         targetArg += ip;
         if (cmdLine.find(targetArg) != std::string::npos) {
@@ -48,31 +48,25 @@ static bool CheckServerIP() {
     return false;
 }
 
-// ==========================================
-// ฟังก์ชันโหลดรูปด้วย stb_image
-// ==========================================
-bool LoadTextureFromFile(const char* filename, PDIRECT3DDEVICE9 d3dDevice, PDIRECT3DTEXTURE9* out_texture, float* out_width, float* out_height) {
-    if (filename == nullptr || d3dDevice == nullptr || out_texture == nullptr || out_width == nullptr || out_height == nullptr) return false;
+// ============================================================
+// ฟังก์ชันสร้างและแปลง Texture สำหรับ DirectX 9 ผ่าน stb_image
+// ============================================================
+static bool CreateD3D9TextureFromPixels(unsigned char* image_data, int image_width, int image_height, PDIRECT3DDEVICE9 d3dDevice, PDIRECT3DTEXTURE9* out_texture, float* out_width, float* out_height) {
+    if (!image_data || !d3dDevice || !out_texture || !out_width || !out_height) return false;
     *out_texture = nullptr;
-    int image_width = 0;
-    int image_height = 0;
-    unsigned char* image_data = stbi_load(filename, &image_width, &image_height, NULL, 4);
-    if (image_data == NULL) return false;
 
     D3DLOCKED_RECT locked_rect;
     if (d3dDevice->CreateTexture(image_width, image_height, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, out_texture, NULL) != D3D_OK) {
-        stbi_image_free(image_data);
         return false;
     }
 
     if ((*out_texture)->LockRect(0, &locked_rect, NULL, 0) != D3D_OK) {
         (*out_texture)->Release();
         *out_texture = nullptr;
-        stbi_image_free(image_data);
         return false;
     }
 
-    // คัดลอกพิกเซลและสลับสีจาก RGBA (stb) เป็น BGRA (DirectX)
+    // คัดลอกพิกเซลและสลับสีจาก RGBA (stb) เป็น BGRA (DirectX 9)
     uint8_t* dest = (uint8_t*)locked_rect.pBits;
     uint8_t* src = image_data;
     for (int y = 0; y < image_height; y++) {
@@ -86,12 +80,46 @@ bool LoadTextureFromFile(const char* filename, PDIRECT3DDEVICE9 d3dDevice, PDIRE
         src += image_width * 4;
     }
     (*out_texture)->UnlockRect(0);
-    stbi_image_free(image_data);
 
-    // ดึงความกว้างและความสูงกลับไปปรับให้ logoSize อัตโนมัติ!
     *out_width = (float)image_width;
     *out_height = (float)image_height;
     return true;
+}
+
+static bool GetResourceData(HMODULE hModule, int resourceId, const char* resourceType, const void** out_data, DWORD* out_size) {
+    if (hModule == NULL || out_data == nullptr || out_size == nullptr) return false;
+    *out_data = nullptr;
+    *out_size = 0;
+
+    HRSRC hResource = FindResourceA(hModule, MAKEINTRESOURCEA(resourceId), resourceType);
+    if (!hResource) return false;
+
+    HGLOBAL hGlobal = LoadResource(hModule, hResource);
+    if (!hGlobal) return false;
+
+    DWORD dataSize = SizeofResource(hModule, hResource);
+    const void* pData = LockResource(hGlobal);
+    if (!pData || dataSize == 0) return false;
+
+    *out_data = pData;
+    *out_size = dataSize;
+    return true;
+}
+
+// โหลดจาก Windows Resource (resource.h / resource.rc) เหมือน sampvoice
+bool LoadTextureFromResource(HMODULE hModule, int resourceId, const char* resourceType, PDIRECT3DDEVICE9 d3dDevice, PDIRECT3DTEXTURE9* out_texture, float* out_width, float* out_height) {
+    const void* pData = nullptr;
+    DWORD dataSize = 0;
+    if (!GetResourceData(hModule, resourceId, resourceType, &pData, &dataSize)) return false;
+
+    int image_width = 0;
+    int image_height = 0;
+    unsigned char* image_data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(pData), (int)dataSize, &image_width, &image_height, NULL, 4);
+    if (image_data == NULL) return false;
+
+    bool success = CreateD3D9TextureFromPixels(image_data, image_width, image_height, d3dDevice, out_texture, out_width, out_height);
+    stbi_image_free(image_data);
+    return success;
 }
 
 PluginRender::PluginRender() {
@@ -105,17 +133,31 @@ PluginRender::PluginRender() {
     hookReset.install();
 }
 
-PluginRender::~PluginRender() {
+void PluginRender::cleanup() {
+    if (isFinished) return;
+    isFinished = true;
+
+    if (pStateBlock != nullptr) {
+        pStateBlock->Release();
+        pStateBlock = nullptr;
+    }
     if (logoTexture != nullptr) {
         logoTexture->Release();
         logoTexture = nullptr;
     }
+    particles.clear();
+    particles.shrink_to_fit();
+
     if (ImGuiinited && ImGui::GetCurrentContext()) {
         ImGui_ImplDX9_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
         ImGuiinited = false;
     }
+}
+
+PluginRender::~PluginRender() {
+    cleanup();
 }
 
 std::uintptr_t PluginRender::findDevice(std::uint32_t len) {
@@ -145,6 +187,10 @@ void* PluginRender::getFunctionAddress(int VTableIndex) {
 }
 
 std::optional<HRESULT> PluginRender::onPresent(const decltype(hookPresent)& hook, IDirect3DDevice9* pDevice, const RECT*, const RECT*, HWND, const RGNDATA*) {
+    if (isFinished) {
+        return std::nullopt;
+    }
+
     if (!CheckServerIP()) {
         return std::nullopt;
     }
@@ -174,7 +220,7 @@ std::optional<HRESULT> PluginRender::onPresent(const decltype(hookPresent)& hook
         io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 
         // ==========================================
-        // โหลด Font
+        // โหลด Font จาก Resource (เหมือน sampvoice)
         // ==========================================
         ImFontConfig font_config;
         font_config.OversampleH = 2;
@@ -185,42 +231,57 @@ std::optional<HRESULT> PluginRender::onPresent(const decltype(hookPresent)& hook
             0,
         };
 
-        const char* customFontPath = "Spark\\fonts\\Kanit-Bold.ttf";
-        const char* fallbackFontPath = "C:\\Windows\\Fonts\\tahoma.ttf";
-        
-        if (GetFileAttributesA(customFontPath) != INVALID_FILE_ATTRIBUTES) {
-            io.Fonts->AddFontFromFileTTF(customFontPath, 20.0f, &font_config, ranges); 
-        } else if (GetFileAttributesA(fallbackFontPath) != INVALID_FILE_ATTRIBUTES) {
-            io.Fonts->AddFontFromFileTTF(fallbackFontPath, 16.0f, &font_config, ranges);
-        } else {
-            io.Fonts->AddFontDefault(); // กันแครชกรณีหาฟอนต์ไม่เจอเลย
+        bool fontLoaded = false;
+        const void* fontData = nullptr;
+        DWORD fontSize = 0;
+        if (GetResourceData(g_hModule, Config::FONT_RESOURCE_ID, Config::FONT_RESOURCE_TYPE, &fontData, &fontSize)) {
+            // ป้องกัน ImGui พยายาม free memory ของ Windows Resource
+            font_config.FontDataOwnedByAtlas = false;
+            io.Fonts->AddFontFromMemoryTTF(const_cast<void*>(fontData), (int)fontSize, 20.0f, &font_config, ranges);
+            fontLoaded = true;
+        }
+
+        if (!fontLoaded) {
+            const char* fallbackFontPath = Config::PATH_FONT_FALLBACK;
+            if (GetFileAttributesA(fallbackFontPath) != INVALID_FILE_ATTRIBUTES) {
+                io.Fonts->AddFontFromFileTTF(fallbackFontPath, 16.0f, &font_config, ranges);
+            } else {
+                io.Fonts->AddFontDefault(); // กันแครชกรณีหาฟอนต์ไม่เจอเลย
+            }
         }
 
         ImGui_ImplWin32_Init(gameHwnd);
         ImGui_ImplDX9_Init(pDevice);
 
         // ==========================================
-        // โหลด Logo ด้วย stb_image
+        // โหลด Logo จาก Resource (เหมือน sampvoice)
         // ==========================================
-        const char* logoPath = "Spark\\logo.png";
-        if (GetFileAttributesA(logoPath) != INVALID_FILE_ATTRIBUTES) {
-            if (LoadTextureFromFile(logoPath, pDevice, &logoTexture, &logoSize.x, &logoSize.y)) {
-                // ย่อขนาดรูปภาพไม่ให้เกิน 300 พิกเซล
-                float maxDimension = 300.0f;
-                float currentMax = (logoSize.x > logoSize.y) ? logoSize.x : logoSize.y;
-                
-                if (currentMax > maxDimension) {
-                    float scale = maxDimension / currentMax;
-                    logoSize.x *= scale;
-                    logoSize.y *= scale;
-                }
+        bool logoLoaded = LoadTextureFromResource(g_hModule, Config::LOGO_RESOURCE_ID, Config::LOGO_RESOURCE_TYPE, pDevice, &logoTexture, &logoSize.x, &logoSize.y);
+
+        if (logoLoaded) {
+            // ย่อขนาดรูปภาพไม่ให้เกินที่กำหนดใน Config
+            float maxDimension = Config::Visuals::MAX_LOGO_DIMENSION;
+            float currentMax = (logoSize.x > logoSize.y) ? logoSize.x : logoSize.y;
+            
+            if (currentMax > maxDimension) {
+                float scale = maxDimension / currentMax;
+                logoSize.x *= scale;
+                logoSize.y *= scale;
             }
+        }
+
+        if (!pStateBlock) {
+            pDevice->CreateStateBlock(D3DSBT_ALL, &pStateBlock);
         }
         
         ImGuiinited = true;
     }
     
     if (ImGui::GetCurrentContext()) {
+        if (pStateBlock) {
+            pStateBlock->Capture();
+        }
+
         ImGui_ImplDX9_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
@@ -233,11 +294,24 @@ std::optional<HRESULT> PluginRender::onPresent(const decltype(hookPresent)& hook
         ImGui::EndFrame();
         ImGui::Render();
         ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+
+        if (pStateBlock) {
+            pStateBlock->Apply();
+        }
+
+        // คืนทรัพยากรทันทีเมื่อหน้าจอโหลดทำงานเสร็จสมบูรณ์
+        if (isGameLoaded && loadScreenAlpha <= 0.0f) {
+            cleanup();
+        }
     }
     return std::nullopt;
 }
 
 std::optional<HRESULT> PluginRender::onLost(const decltype(hookReset)& hook, IDirect3DDevice9* pDevice, D3DPRESENT_PARAMETERS* parameters) {
+    if (pStateBlock) {
+        pStateBlock->Release();
+        pStateBlock = nullptr;
+    }
     if (ImGuiinited && ImGui::GetCurrentContext()) {
         ImGui_ImplDX9_InvalidateDeviceObjects();
     }
@@ -247,11 +321,14 @@ std::optional<HRESULT> PluginRender::onLost(const decltype(hookReset)& hook, IDi
 void PluginRender::onReset(const decltype(hookReset)& hook, HRESULT& returnValue, IDirect3DDevice9* pDevice, D3DPRESENT_PARAMETERS* parameters) {
     if (ImGuiinited && ImGui::GetCurrentContext() && SUCCEEDED(returnValue)) {
         ImGui_ImplDX9_CreateDeviceObjects();
+        if (!pStateBlock) {
+            pDevice->CreateStateBlock(D3DSBT_ALL, &pStateBlock);
+        }
     }
 }
 
 HRESULT __stdcall PluginRender::onWndproc(const decltype(hookWndproc)& hook, HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    if (ImGui::GetCurrentContext()) {
+    if (!isFinished && ImGui::GetCurrentContext()) {
         ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam);
     }
     return hook.get_trampoline()(hwnd, uMsg, wParam, lParam);
@@ -262,8 +339,8 @@ void PluginRender::initParticles() {
     
     ImVec2 screenSize = ImGui::GetIO().DisplaySize;
     if (screenSize.x <= 1.0f || screenSize.y <= 1.0f) return;
-    particles.reserve(80);
-    for (int i = 0; i < 80; i++) {
+    particles.reserve(Config::Visuals::PARTICLE_COUNT);
+    for (int i = 0; i < Config::Visuals::PARTICLE_COUNT; i++) {
         BackgroundParticle p;
         p.x = (float)(rand() % (int)screenSize.x);
         p.y = (float)(rand() % (int)screenSize.y);
@@ -313,14 +390,15 @@ void PluginRender::drawLoadScreen() {
         if (loadProgress > targetProgress) loadProgress = targetProgress;
     } else {
         loadProgress = 1.0f;
-        loadScreenAlpha -= deltaTime * 1.5f;
+        loadScreenAlpha -= deltaTime * Config::Visuals::FADE_OUT_SPEED;
         if (loadScreenAlpha < 0.0f) loadScreenAlpha = 0.0f;
-    }    ImVec2 center = ImVec2(screenSize.x / 2.0f, screenSize.y / 2.0f);
+    }
+    ImVec2 center = ImVec2(screenSize.x / 2.0f, screenSize.y / 2.0f);
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(screenSize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.03f, 0.04f, loadScreenAlpha));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(Config::Theme::BG_R, Config::Theme::BG_G, Config::Theme::BG_B, loadScreenAlpha));
     ImGui::Begin("##CustomLoadScreen", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -337,10 +415,10 @@ void PluginRender::drawLoadScreen() {
     }
 
     ImU32 textCol = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, loadScreenAlpha));
-    ImU32 pinkAccent = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.7686f, 0.9137f, loadScreenAlpha));
-    dl->AddRectFilled(ImVec2(30, 30), ImVec2(34, 52), pinkAccent);
-    dl->AddText(ImGui::GetFont(), 18.0f, ImVec2(45, 30), textCol, "Spark Global");
-    const char* trText = "Powered By Spark Team";
+    ImU32 accentColor = ImGui::ColorConvertFloat4ToU32(ImVec4(Config::Theme::ACCENT_R, Config::Theme::ACCENT_G, Config::Theme::ACCENT_B, loadScreenAlpha));
+    dl->AddRectFilled(ImVec2(30, 30), ImVec2(34, 52), accentColor);
+    dl->AddText(ImGui::GetFont(), 18.0f, ImVec2(45, 30), textCol, Config::SERVER_NAME);
+    const char* trText = Config::FOOTER_CREDIT;
     ImVec2 trSize = ImGui::CalcTextSize(trText);
     dl->AddText(ImVec2(screenSize.x - trSize.x - 30, 30), ImGui::ColorConvertFloat4ToU32(ImVec4(0.7f, 0.7f, 0.7f, loadScreenAlpha)), trText);
 
@@ -363,7 +441,7 @@ void PluginRender::drawLoadScreen() {
     float barH = 6.0f;
     float barY = screenSize.y - barH;
     dl->AddRectFilled(ImVec2(0, barY), ImVec2(screenSize.x, screenSize.y), ImGui::ColorConvertFloat4ToU32(ImVec4(0.1f, 0.1f, 0.1f, loadScreenAlpha)));
-    dl->AddRectFilled(ImVec2(0, barY), ImVec2(screenSize.x * loadProgress, screenSize.y), pinkAccent);
+    dl->AddRectFilled(ImVec2(0, barY), ImVec2(screenSize.x * loadProgress, screenSize.y), accentColor);
     char loadText[64];
     sprintf_s(loadText, "Loading game %d%%", (int)(loadProgress * 100.0f));
     ImVec2 brSize = ImGui::CalcTextSize(loadText);
@@ -375,7 +453,7 @@ void PluginRender::drawLoadScreen() {
     ImVec2 sCenter = ImVec2(screenSize.x - 30, brY + 7);
     dl->AddCircle(sCenter, sRadius, ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, loadScreenAlpha)), 16, 2.0f);
     dl->PathArcTo(sCenter, sRadius, time * 8.0f, time * 8.0f + 3.14f, 16);
-    dl->PathStroke(pinkAccent, false, 2.0f);
+    dl->PathStroke(accentColor, false, 2.0f);
 
     ImGui::End();
     ImGui::PopStyleColor();

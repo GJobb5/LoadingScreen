@@ -18,22 +18,26 @@ using PresentSignature = HRESULT(__stdcall*)(IDirect3DDevice9*, const RECT*, con
 using ResetSignature = HRESULT(__stdcall*)(IDirect3DDevice9*, D3DPRESENT_PARAMETERS*);
 
 class PluginRender {
+private:
     bool ImGuiinited = false;
+    bool isFinished = false; // โหลดเสร็จสมบูรณ์ -> ปิดการทำงานเพื่อคืนทรัพยากร 100%
     
     // สถานะของ Load Screen
     float loadScreenAlpha = 1.0f;
     bool isGameLoaded = false;
     float loadProgress = 0.0f;
 
-    // --- เพิ่มตัวแปรสำหรับ UI ใหม่ ---
+    // --- ตัวแปรสำหรับ UI ---
     std::vector<BackgroundParticle> particles;
     void initParticles();
     
     IDirect3DTexture9* logoTexture = nullptr; 
-    ImVec2 logoSize = ImVec2(250.0f, 100.0f); // ตอนนี้คอมไพเลอร์จะรู้จัก ImVec2 แล้ว
+    IDirect3DStateBlock9* pStateBlock = nullptr;
+    ImVec2 logoSize = ImVec2(250.0f, 100.0f);
     // -----------------------------
 
     void drawLoadScreen();
+    void cleanup();
 
     std::uintptr_t findDevice(std::uint32_t Len);
     void* getFunctionAddress(int VTableIndex);

@@ -1,4 +1,4 @@
-﻿cmake_minimum_required (VERSION 3.15)
+cmake_minimum_required (VERSION 3.15)
 
 project ("LoadingScreen"
 	VERSION 0.0
@@ -46,6 +46,17 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(sampapi ktsignal xbyak kthook imgui stb)
 
+set(RESOURCE_RC "${CMAKE_CURRENT_SOURCE_DIR}/resources/resource.rc")
+file(GLOB RESOURCE_DEPENDS CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/resources/*.png"
+	"${CMAKE_CURRENT_SOURCE_DIR}/resources/*.ttf"
+	"${CMAKE_CURRENT_SOURCE_DIR}/resources/*.h"
+)
+set_source_files_properties("${RESOURCE_RC}" PROPERTIES
+	COMPILE_FLAGS "/i \"${CMAKE_CURRENT_SOURCE_DIR}/resources\""
+	OBJECT_DEPENDS "${RESOURCE_DEPENDS}"
+)
+
 add_library(${PROJECT_NAME} SHARED)
 
 # ----------------------------------------------------
@@ -55,6 +66,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 	src/main.cpp
 	src/Plugin.cpp
 	src/PluginRender.cpp
+	${RESOURCE_RC}
 	${imgui_SOURCE_DIR}/imgui.cpp
 	${imgui_SOURCE_DIR}/imgui_draw.cpp
 	${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -67,6 +79,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 # 3. กำหนดโฟลเดอร์สำหรับ Include 
 # ----------------------------------------------------
 target_include_directories(${PROJECT_NAME} PRIVATE
+	src
+	resources
 	${imgui_SOURCE_DIR}
 	${imgui_SOURCE_DIR}/backends
 	${xbyak_SOURCE_DIR}
