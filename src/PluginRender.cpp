@@ -263,14 +263,6 @@ std::optional<HRESULT> PluginRender::onPresent(const decltype(hookPresent)& hook
         }
 
         if (!fontLoaded) {
-            const char* mainFontPath = Config::PATH_FONT_MAIN;
-            if (GetFileAttributesA(mainFontPath) != INVALID_FILE_ATTRIBUTES) {
-                m_font = io.Fonts->AddFontFromFileTTF(mainFontPath, 20.0f, &font_config, ranges);
-                if (m_font) fontLoaded = true;
-            }
-        }
-
-        if (!fontLoaded) {
             const char* fallbackFontPath = Config::PATH_FONT_FALLBACK;
             if (GetFileAttributesA(fallbackFontPath) != INVALID_FILE_ATTRIBUTES) {
                 m_font = io.Fonts->AddFontFromFileTTF(fallbackFontPath, 18.0f, &font_config, ranges);
