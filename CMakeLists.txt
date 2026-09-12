@@ -103,3 +103,15 @@ set_target_properties(${PROJECT_NAME}
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+
+# ตรวจจับการเปลี่ยนไฟล์ Font หรือ Resource และบังคับ Compile Resource ใหม่เสมอ
+add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E touch "${RESOURCE_RC}"
+    COMMENT "Updating resource.rc timestamp to ensure resources are re-baked"
+)
+
+# คัดลอกไฟล์ .asi ไปที่ E:/SparkGlobal อัตโนมัติหลังคอมไพล์สำเร็จ (พร้อมระบบ Hot-swap ป้องกันติดล็อคขณะเปิดเกม)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND powershell -NoProfile -Command "if (Test-Path 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>') { Move-Item -Path 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>' -Destination 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>.old' -Force -ErrorAction SilentlyContinue }; Copy-Item -Path '$<TARGET_FILE:${PROJECT_NAME}>' -Destination 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>' -Force"
+    COMMENT "Auto-deploying $<TARGET_FILE_NAME:${PROJECT_NAME}> to E:/SparkGlobal"
+)
