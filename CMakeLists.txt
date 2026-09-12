@@ -101,3 +101,5 @@ set_target_properties(${PROJECT_NAME}
 	SUFFIX ".asi"
 )
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
+add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
+add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")

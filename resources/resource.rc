@@ -2,5 +2,5 @@
 #define APSTUDIO_READONLY_SYMBOLS  
 #include "winres.h"  
 #undef APSTUDIO_READONLY_SYMBOLS  
-IDR_FONT1 FONT "font.ttf"  
+IDR_FONT1 RCDATA "font.ttf"  
 IDB_PNG_LOGO PNG "logo.png" 

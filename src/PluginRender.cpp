@@ -87,11 +87,28 @@ static bool CreateD3D9TextureFromPixels(unsigned char* image_data, int image_wid
 }
 
 static bool GetResourceData(HMODULE hModule, int resourceId, const char* resourceType, const void** out_data, DWORD* out_size) {
-    if (hModule == NULL || out_data == nullptr || out_size == nullptr) return false;
+    if (out_data == nullptr || out_size == nullptr) return false;
     *out_data = nullptr;
     *out_size = 0;
 
-    HRSRC hResource = FindResourceA(hModule, MAKEINTRESOURCEA(resourceId), resourceType);
+    if (hModule == NULL) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (VirtualQuery((LPCVOID)&GetResourceData, &mbi, sizeof(mbi))) {
+            hModule = (HMODULE)mbi.AllocationBase;
+        }
+    }
+    if (hModule == NULL) return false;
+
+    HRSRC hResource = nullptr;
+    if (resourceType != nullptr) {
+        hResource = FindResourceA(hModule, MAKEINTRESOURCEA(resourceId), resourceType);
+    }
+    if (!hResource) {
+        hResource = FindResourceA(hModule, MAKEINTRESOURCEA(resourceId), RT_RCDATA);
+    }
+    if (!hResource) {
+        hResource = FindResourceA(hModule, MAKEINTRESOURCEA(resourceId), RT_FONT);
+    }
     if (!hResource) return false;
 
     HGLOBAL hGlobal = LoadResource(hModule, hResource);
@@ -153,6 +170,7 @@ void PluginRender::cleanup() {
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
         ImGuiinited = false;
+        m_font = nullptr;
     }
 }
 
@@ -234,20 +252,34 @@ std::optional<HRESULT> PluginRender::onPresent(const decltype(hookPresent)& hook
         bool fontLoaded = false;
         const void* fontData = nullptr;
         DWORD fontSize = 0;
-        if (GetResourceData(g_hModule, Config::FONT_RESOURCE_ID, Config::FONT_RESOURCE_TYPE, &fontData, &fontSize)) {
-            // ป้องกัน ImGui พยายาม free memory ของ Windows Resource
-            font_config.FontDataOwnedByAtlas = false;
-            io.Fonts->AddFontFromMemoryTTF(const_cast<void*>(fontData), (int)fontSize, 20.0f, &font_config, ranges);
-            fontLoaded = true;
+        if (GetResourceData(g_hModule, Config::FONT_RESOURCE_ID, Config::FONT_RESOURCE_TYPE, &fontData, &fontSize) && fontData != nullptr && fontSize > 0) {
+            void* fontCopy = IM_ALLOC(fontSize);
+            if (fontCopy) {
+                memcpy(fontCopy, fontData, fontSize);
+                font_config.FontDataOwnedByAtlas = true;
+                m_font = io.Fonts->AddFontFromMemoryTTF(fontCopy, (int)fontSize, 20.0f, &font_config, ranges);
+                if (m_font) fontLoaded = true;
+            }
+        }
+
+        if (!fontLoaded) {
+            const char* mainFontPath = Config::PATH_FONT_MAIN;
+            if (GetFileAttributesA(mainFontPath) != INVALID_FILE_ATTRIBUTES) {
+                m_font = io.Fonts->AddFontFromFileTTF(mainFontPath, 20.0f, &font_config, ranges);
+                if (m_font) fontLoaded = true;
+            }
         }
 
         if (!fontLoaded) {
             const char* fallbackFontPath = Config::PATH_FONT_FALLBACK;
             if (GetFileAttributesA(fallbackFontPath) != INVALID_FILE_ATTRIBUTES) {
-                io.Fonts->AddFontFromFileTTF(fallbackFontPath, 16.0f, &font_config, ranges);
-            } else {
-                io.Fonts->AddFontDefault(); // กันแครชกรณีหาฟอนต์ไม่เจอเลย
+                m_font = io.Fonts->AddFontFromFileTTF(fallbackFontPath, 18.0f, &font_config, ranges);
+                if (m_font) fontLoaded = true;
             }
+        }
+
+        if (!fontLoaded) {
+            m_font = io.Fonts->AddFontDefault();
         }
 
         ImGui_ImplWin32_Init(gameHwnd);
@@ -401,6 +433,10 @@ void PluginRender::drawLoadScreen() {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(Config::Theme::BG_R, Config::Theme::BG_G, Config::Theme::BG_B, loadScreenAlpha));
     ImGui::Begin("##CustomLoadScreen", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
+    if (m_font) {
+        ImGui::PushFont(m_font);
+    }
+
     ImDrawList* dl = ImGui::GetWindowDrawList();
     float time = (float)ImGui::GetTime();
     initParticles();
@@ -417,10 +453,10 @@ void PluginRender::drawLoadScreen() {
     ImU32 textCol = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, loadScreenAlpha));
     ImU32 accentColor = ImGui::ColorConvertFloat4ToU32(ImVec4(Config::Theme::ACCENT_R, Config::Theme::ACCENT_G, Config::Theme::ACCENT_B, loadScreenAlpha));
     dl->AddRectFilled(ImVec2(30, 30), ImVec2(34, 52), accentColor);
-    dl->AddText(ImGui::GetFont(), 18.0f, ImVec2(45, 30), textCol, Config::SERVER_NAME);
+    dl->AddText(m_font, 20.0f, ImVec2(45, 30), textCol, Config::SERVER_NAME);
     const char* trText = Config::FOOTER_CREDIT;
     ImVec2 trSize = ImGui::CalcTextSize(trText);
-    dl->AddText(ImVec2(screenSize.x - trSize.x - 30, 30), ImGui::ColorConvertFloat4ToU32(ImVec4(0.7f, 0.7f, 0.7f, loadScreenAlpha)), trText);
+    dl->AddText(ImVec2(screenSize.x - trSize.x - 30, 32), ImGui::ColorConvertFloat4ToU32(ImVec4(0.7f, 0.7f, 0.7f, loadScreenAlpha)), trText);
 
     float bounceScale = 1.0f + (sinf(time * 3.5f) * 0.05f);
     float bounceY = sinf(time * 2.5f) * 8.0f;
@@ -453,7 +489,9 @@ void PluginRender::drawLoadScreen() {
     ImVec2 sCenter = ImVec2(screenSize.x - 30, brY + 7);
     dl->AddCircle(sCenter, sRadius, ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, loadScreenAlpha)), 16, 2.0f);
     dl->PathArcTo(sCenter, sRadius, time * 8.0f, time * 8.0f + 3.14f, 16);
-    dl->PathStroke(accentColor, false, 2.0f);
+    if (m_font) {
+        ImGui::PopFont();
+    }
 
     ImGui::End();
     ImGui::PopStyleColor();

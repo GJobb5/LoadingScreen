@@ -32,9 +32,10 @@ namespace Config {
     constexpr const char* LOGO_RESOURCE_TYPE = "PNG";
 
     constexpr int  FONT_RESOURCE_ID          = IDR_FONT1;
-    constexpr const char* FONT_RESOURCE_TYPE = "FONT";
+    constexpr const char* FONT_RESOURCE_TYPE = "RCDATA";
 
-    // ฟอนต์สำรองกรณีฉุกเฉิน
+    // ฟอนต์หลักและฟอนต์สำรองจากโฟลเดอร์เกม
+    constexpr const char* PATH_FONT_MAIN     = "Spark\\fonts\\Kanit-Bold.ttf";
     constexpr const char* PATH_FONT_FALLBACK = "C:\\Windows\\Fonts\\tahoma.ttf";
 
     // ─── 5. ธีมและโทนสี (Theme & Color Scheme) ──────────────────────────────────

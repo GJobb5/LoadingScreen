@@ -34,6 +34,7 @@ private:
     IDirect3DTexture9* logoTexture = nullptr; 
     IDirect3DStateBlock9* pStateBlock = nullptr;
     ImVec2 logoSize = ImVec2(250.0f, 100.0f);
+    ImFont* m_font = nullptr;
     // -----------------------------
 
     void drawLoadScreen();
