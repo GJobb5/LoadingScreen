@@ -481,6 +481,7 @@ void PluginRender::drawLoadScreen() {
     ImVec2 sCenter = ImVec2(screenSize.x - 30, brY + 7);
     dl->AddCircle(sCenter, sRadius, ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.2f, 0.2f, loadScreenAlpha)), 16, 2.0f);
     dl->PathArcTo(sCenter, sRadius, time * 8.0f, time * 8.0f + 3.14f, 16);
+    dl->PathStroke(accentColor, false, 2.0f);
     if (m_font) {
         ImGui::PopFont();
     }

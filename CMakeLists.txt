@@ -1,11 +1,18 @@
 cmake_minimum_required (VERSION 3.15)
+set(CMAKE_POLICY_VERSION_MINIMUM "3.5" CACHE STRING "" FORCE)
 
 project ("LoadingScreen"
 	VERSION 0.0
 )
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+# Output binaries directly to <ProjectRoot>/bin
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${CONFIG} CONFIG_UPPER)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+endforeach()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 include(FetchContent)
@@ -99,7 +106,16 @@ set_target_properties(${PROJECT_NAME}
 	PROPERTIES
 	OUTPUT_NAME ${PROJECT_NAME}
 	SUFFIX ".asi"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin"
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin"
 )
+foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${CONFIG} CONFIG_UPPER)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_CURRENT_SOURCE_DIR}/bin"
+        LIBRARY_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_CURRENT_SOURCE_DIR}/bin"
+    )
+endforeach()
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
@@ -110,8 +126,8 @@ add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
     COMMENT "Updating resource.rc timestamp to ensure resources are re-baked"
 )
 
-# คัดลอกไฟล์ .asi ไปที่ E:/SparkGlobal อัตโนมัติหลังคอมไพล์สำเร็จ (พร้อมระบบ Hot-swap ป้องกันติดล็อคขณะเปิดเกม)
+# คัดลอกไฟล์ .asi ไปที่ E:/SparkGlobal อัตโนมัติหลังคอมไพล์สำเร็จ (หากมีโฟลเดอร์อยู่ พร้อมระบบ Hot-swap ป้องกันติดล็อคขณะเปิดเกม)
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND powershell -NoProfile -Command "if (Test-Path 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>') { Move-Item -Path 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>' -Destination 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>.old' -Force -ErrorAction SilentlyContinue }; Copy-Item -Path '$<TARGET_FILE:${PROJECT_NAME}>' -Destination 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>' -Force"
+    COMMAND powershell -NoProfile -Command "if (Test-Path 'E:/SparkGlobal') { if (Test-Path 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>') { Move-Item -Path 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>' -Destination 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>.old' -Force -ErrorAction SilentlyContinue }; Copy-Item -Path '$<TARGET_FILE:${PROJECT_NAME}>' -Destination 'E:/SparkGlobal/$<TARGET_FILE_NAME:${PROJECT_NAME}>' -Force }"
     COMMENT "Auto-deploying $<TARGET_FILE_NAME:${PROJECT_NAME}> to E:/SparkGlobal"
 )
